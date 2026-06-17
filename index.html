@@ -98,7 +98,9 @@
             padding: 1.5rem;
             transition: border-color 0.2s, border-style 0.2s;
             cursor: default;
+            text-decoration: none;
         }
+        a.resource-card { cursor: pointer; }
         html.dark .resource-card {
             background: #181818;
             border-color: #272727;
@@ -187,9 +189,12 @@
     <main style="max-width: 48rem; margin: 0 auto; padding: 3rem 1.5rem 4rem;">
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem;">
 
-            <div class="resource-card">
-                <span class="card-label">Resource coming soon</span>
-            </div>
+            <a href="https://mrenne.github.io/conversational_coding/" target="_blank" rel="noopener" class="resource-card">
+                <div>
+                    <p style="font-weight: 700; font-size: 1rem; margin: 0 0 0.5rem; color: inherit;">Conversational Coding</p>
+                    <p style="font-size: 0.85rem; color: #888; margin: 0; line-height: 1.5;">Generate AI prompts to build interactive CTE learning experiences for NC educators.</p>
+                </div>
+            </a>
 
             <div class="resource-card">
                 <span class="card-label">Resource coming soon</span>

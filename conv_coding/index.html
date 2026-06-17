@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTE Conversational Coding — Educator Studio</title>
+
+    <!-- SEO -->
+    <meta name="description" content="Build AI-generated interactive learning experiences for your CTE classroom. Select a career cluster, paste your NC CTE standard, and get a ready-to-use prompt in seconds.">
+
+    <!-- Open Graph — controls how the link looks when shared in email, Slack, Google Classroom, etc. -->
+    <meta property="og:title" content="CTE Conversational Coding — Educator Studio">
+    <meta property="og:description" content="Generate AI prompts to build interactive CTE learning experiences for high school students. Free tool for NC CTE educators.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://your-github-username.github.io/educator-studio/conv_coding/">
+
+    <!-- Favicon: sparkles emoji rendered as an inline SVG so no image file is needed -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✨</text></svg>">
+
+    <!-- Tailwind CSS for Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        /* Fallback animations for Tailwind */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+    </style>
+</head>
+<body>
+    <!-- Shown only when JavaScript is disabled or blocked -->
+    <noscript>
+        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-family:system-ui,sans-serif;padding:2rem;">
+            <div style="max-width:28rem;text-align:center;">
+                <div style="font-size:2.5rem;margin-bottom:1rem;">✨</div>
+                <h1 style="font-size:1.5rem;font-weight:700;color:#0f172a;margin-bottom:0.75rem;">JavaScript Required</h1>
+                <p style="color:#64748b;line-height:1.6;">CTE Conversational Coding needs JavaScript to run. Please enable JavaScript in your browser settings, or check with your school's IT department if it is being blocked.</p>
+            </div>
+        </div>
+    </noscript>
+
+    <!-- React will attach the app to this div -->
+    <div id="root"></div>
+
+    <!-- The actual React App code (no Babel needed — htm compiles JSX-like syntax at runtime without a separate transpiler) -->
+    <script type="module">
+        import { createElement, Fragment, useState, useEffect, useMemo } from 'https://esm.sh/react@18.2.0';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+        import htm from 'https://esm.sh/htm@3.1.1';
+        import {
+          ChevronRight, ChevronLeft, Copy, CheckCircle, Code, BookOpen,
+          Layers, Sparkles, Target, Share2, Heart, Globe
+        } from 'https://esm.sh/lucide-react@0.263.1';
+
+        // Bind htm to React.createElement with Fragment support so <> </> works
+        const h = Object.assign(createElement, { Fragment });
+        const html = htm.bind(h);
+
+        const CAREER_CLUSTERS = [
+          { name: "Advanced Manufacturing", icon: "⚙️" },
+          { name: "Agriculture", icon: "🌾" },
+          { name: "Arts, Entertainment, & Design", icon: "🎨" },
+          { name: "Construction", icon: "🏗️" },
+          { name: "Digital Technology", icon: "💻" },
+          { name: "Education", icon: "📚" },
+          { name: "Energy & Natural Resources", icon: "⚡" },
+          { name: "Financial Services", icon: "📈" },
+          { name: "Healthcare & Human Services", icon: "⚕️" },
+          { name: "Hospitality, Events, & Tourism", icon: "🏨" },
+          { name: "Management & Entrepreneurship", icon: "💼" },
+          { name: "Marketing & Sales", icon: "🛒" },
+          { name: "Public Service & Safety", icon: "🛡️" },
+          { name: "Supply Chain & Transportation", icon: "🚚" }
+        ];
+
+        const PROJECT_TYPES = [
+          { id: 'simulation', label: 'Interactive Simulation', desc: 'A virtual scenario where students manipulate variables.' },
+          { id: 'game', label: 'Review Game', desc: 'A gamified experience (matching, quiz, drag-and-drop).' },
+          { id: 'calculator', label: 'Industry Calculator', desc: 'A tool to calculate real-world industry metrics.' },
+          { id: 'scenario', label: 'Scenario Branching', desc: 'A "choose your own adventure" text-based roleplay.' },
+          { id: 'lab', label: 'Virtual Science Lab', desc: 'A digital lab where students run experiments and observe outcomes.' },
+          { id: 'timeline', label: 'Timeline Explorer', desc: 'An interactive timeline for exploring industry history or process steps.' }
+        ];
+
+        const SHEETDB_API_URL = "https://sheetdb.io/api/v1/z641anmizw0od";
+
+        function App() {
+          const [activeTab, setActiveTab] = useState('builder');
+          const [step, setStep] = useState(1);
+          const [selectedCluster, setSelectedCluster] = useState(null);
+          const [cteStandard, setCteStandard] = useState("");
+          const [projectType, setProjectType] = useState(null);
+          const [copiedId, setCopiedId] = useState(null);
+          const [votedIds, setVotedIds] = useState(() => {
+            try { return new Set(JSON.parse(localStorage.getItem('upvotedIds') || '[]')); }
+            catch { return new Set(); }
+          });
+
+          // Gallery State
+          const [galleryItems, setGalleryItems] = useState([]);
+          const [shared, setShared] = useState(false);
+          const [isSharing, setIsSharing] = useState(false);
+          const [isLoadingGallery, setIsLoadingGallery] = useState(true);
+          const [galleryError, setGalleryError] = useState(false);
+          const [shareError, setShareError] = useState(false);
+
+          const fetchGallery = async () => {
+            setIsLoadingGallery(true);
+            setGalleryError(false);
+            if (SHEETDB_API_URL === "YOUR_SHEETDB_API_URL_HERE") {
+              setIsLoadingGallery(false);
+              return;
+            }
+            try {
+              const response = await fetch(SHEETDB_API_URL);
+              const data = await response.json();
+
+              // Format data and reverse to show newest first
+              const formattedData = data.map(item => ({
+                ...item,
+                id: parseInt(item.id, 10) || Date.now(),
+                upvotes: parseInt(item.upvotes, 10) || 0
+              })).reverse();
+
+              setGalleryItems(formattedData);
+            } catch (error) {
+              console.error("Error fetching from SheetDB:", error);
+              setGalleryError(true);
+            } finally {
+              setIsLoadingGallery(false);
+            }
+          };
+
+          useEffect(() => { fetchGallery(); }, []);
+
+          // Memoized so the prompt string is only rebuilt when its inputs actually change,
+          // not on every render
+          const generatedPrompt = useMemo(() => {
+            if (!selectedCluster || !cteStandard || !projectType) return "";
+            const typeStr = PROJECT_TYPES.find(p => p.id === projectType)?.label || "web application";
+
+            return `You are an expert Educational Software Developer and a Master CTE (Career and Technical Education) Instructor.
+
+I want to use "vibe coding" to create a single-file interactive ${typeStr} for my students.
+
+### CONTEXT & LEARNING GOALS
+- Target Career Cluster: ${selectedCluster.name}
+- Learning Objective / NC CTE Standard: "${cteStandard}"
+
+### THE TASK
+Please write the complete, functional code for this ${typeStr}.
+The interactive experience MUST:
+1. Directly teach or reinforce the standard provided above.
+2. Incorporate realistic terminology, scenarios, and contexts from the ${selectedCluster.name} industry.
+3. Be highly engaging and visually appealing for high school students.
+
+### TECHNICAL CONSTRAINTS
+- Output the entire project in a SINGLE FILE (HTML) containing all CSS and JavaScript.
+- Do not use external assets (like images) unless they are generated via code, emojis, or inline SVGs.
+- Use a modern UI library like Tailwind CSS via CDN for styling.
+- Heavily comment the code so that I (a non-programmer educator) can easily understand how to edit the text, colors, and questions later.
+
+Before providing the code, give me a brief 2-3 sentence overview of what the interactive experience will look like and how the student will use it.`;
+          }, [selectedCluster, cteStandard, projectType]);
+
+          const handleNext = () => setStep((prev) => Math.min(prev + 1, 4));
+          const handleBack = () => setStep((prev) => Math.max(prev - 1, 1));
+          const handleReset = () => {
+            setStep(1);
+            setSelectedCluster(null);
+            setCteStandard("");
+            setProjectType(null);
+          };
+
+          const handleCopy = async (textToCopy, id) => {
+            try {
+              await navigator.clipboard.writeText(textToCopy);
+              setCopiedId(id);
+              setTimeout(() => setCopiedId(null), 2000);
+            } catch (err) {
+              console.error("Clipboard write failed:", err);
+            }
+          };
+
+          const handleShareToGallery = async () => {
+            if (SHEETDB_API_URL === "YOUR_SHEETDB_API_URL_HERE") return;
+
+            setIsSharing(true);
+            const newItem = {
+              id: Date.now(),
+              cluster: selectedCluster.name,
+              icon: selectedCluster.icon,
+              standard: cteStandard,
+              type: PROJECT_TYPES.find(p => p.id === projectType)?.label,
+              prompt: generatedPrompt,
+              upvotes: 0
+            };
+
+            try {
+              // Send to SheetDB
+              await fetch(SHEETDB_API_URL, {
+                method: 'POST',
+                headers: {
+                  'Accept': 'application/json',
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ data: [newItem] })
+              });
+
+              // Update local state
+              const updatedGallery = [newItem, ...galleryItems];
+              setGalleryItems(updatedGallery);
+
+              setShared(true);
+              setTimeout(() => {
+                setShared(false);
+                setActiveTab('gallery');
+              }, 1500);
+            } catch (error) {
+              console.error("Error sharing to SheetDB:", error);
+              setShareError(true);
+              setTimeout(() => setShareError(false), 4000);
+            } finally {
+              setIsSharing(false);
+            }
+          };
+
+          const handleUpvote = async (id) => {
+            if (SHEETDB_API_URL === "YOUR_SHEETDB_API_URL_HERE") return;
+            if (votedIds.has(id)) return;
+
+            // Persist vote to localStorage immediately
+            const newVoted = new Set(votedIds);
+            newVoted.add(id);
+            setVotedIds(newVoted);
+            localStorage.setItem('upvotedIds', JSON.stringify([...newVoted]));
+
+            // Optimistic UI update
+            const itemToUpdate = galleryItems.find(item => item.id === id);
+            if (!itemToUpdate) return;
+
+            const newUpvotes = itemToUpdate.upvotes + 1;
+
+            setGalleryItems(prev => prev.map(item =>
+              item.id === id ? { ...item, upvotes: newUpvotes } : item
+            ));
+
+            // Background API update
+            try {
+              await fetch(`${SHEETDB_API_URL}/id/${id}`, {
+                method: 'PATCH',
+                headers: {
+                  'Accept': 'application/json',
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ data: { upvotes: newUpvotes } })
+              });
+            } catch (error) {
+              console.error("Error upvoting in SheetDB:", error);
+              // Revert on failure
+              setGalleryItems(prev => prev.map(item =>
+                item.id === id ? { ...item, upvotes: itemToUpdate.upvotes } : item
+              ));
+            }
+          };
+
+          const isNextDisabled = (step === 1 && !selectedCluster) ||
+                                  (step === 2 && !cteStandard) ||
+                                  (step === 3 && !projectType) ||
+                                  step === 4;
+
+          return html`
+            <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-blue-200">
+
+              <!-- Header with Subtitle and Tabs -->
+              <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between sticky top-0 z-10 gap-4 shadow-sm">
+                <div>
+                  <a href="../" className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-blue-600 transition-colors mb-2 font-medium">
+                    <${ChevronLeft} className="w-3 h-3" /> Educator Studio
+                  </a>
+                  <div className="flex items-center gap-2">
+                    <${Sparkles} className="text-blue-600 w-6 h-6" />
+                    <h1 className="text-2xl font-bold text-slate-900">CTE Conversational Coding</h1>
+                  </div>
+                  <p className="text-sm text-slate-500 font-medium mt-1">
+                    Helping Educators Build Learning Experiences For (and with) Students
+                  </p>
+                </div>
+
+                <!-- Tab Navigation -->
+                <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 self-start md:self-auto">
+                  <button
+                    onClick=${() => setActiveTab('builder')}
+                    className=${`px-4 py-2 rounded-md text-sm font-semibold transition-all ${
+                      activeTab === 'builder'
+                        ? 'bg-white shadow-sm text-blue-700'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Prompt Builder
+                  </button>
+                  <button
+                    onClick=${() => setActiveTab('gallery')}
+                    className=${`px-4 py-2 rounded-md text-sm font-semibold transition-all flex items-center gap-2 ${
+                      activeTab === 'gallery'
+                        ? 'bg-white shadow-sm text-blue-700'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <${Globe} className="w-4 h-4" /> Community Gallery
+                  </button>
+                </div>
+              </header>
+
+              <main className="max-w-4xl mx-auto p-6 mt-2">
+
+                ${activeTab === 'builder' ? html`
+                  <div>
+                    <!-- Progress Bar -->
+                    <div className="flex gap-2 mb-8">
+                      ${['Career Cluster', 'NC CTE Standard', 'Experience Type', 'Your Prompt'].map((label, idx) => html`
+                        <div key=${idx} className="flex-1 flex flex-col gap-1.5">
+                          <div className=${`h-2 rounded-full transition-colors duration-300 ${
+                            idx + 1 <= step ? 'bg-blue-600' : 'bg-slate-200'
+                          }`} />
+                          <span className=${`text-xs font-medium text-center truncate ${
+                            idx + 1 <= step ? 'text-blue-600' : 'text-slate-400'
+                          }`}>${label}</span>
+                        </div>
+                      `)}
+                    </div>
+
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-[500px] flex flex-col">
+                      <div className="p-8 flex-grow">
+
+                        <!-- STEP 1: Cluster Selection -->
+                        ${step === 1 && html`
+                          <div className="animate-in">
+                            <div className="flex items-center gap-3 mb-6">
+                              <div className="p-3 bg-blue-100 text-blue-600 rounded-xl">
+                                <${Layers} className="w-6 h-6" />
+                              </div>
+                              <div>
+                                <h2 className="text-2xl font-bold">Select Career Cluster</h2>
+                                <p className="text-slate-500">Choose from the modernized 2024 Advance CTE clusters.</p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                              ${CAREER_CLUSTERS.map((cluster) => html`
+                                <button
+                                  key=${cluster.name}
+                                  onClick=${() => setSelectedCluster(cluster)}
+                                  className=${`p-4 rounded-xl border text-left transition-all duration-200 hover:shadow-md flex items-center gap-3
+                                    ${selectedCluster?.name === cluster.name
+                                      ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-600'
+                                      : 'border-slate-200 hover:border-blue-300 bg-white'}`}
+                                >
+                                  <span className="text-2xl">${cluster.icon}</span>
+                                  <span className="font-medium text-sm">${cluster.name}</span>
+                                </button>
+                              `)}
+                            </div>
+                          </div>
+                        `}
+
+                        <!-- STEP 2: Standard Input -->
+                        ${step === 2 && html`
+                          <div className="animate-in">
+                            <div className="flex items-center gap-3 mb-6">
+                              <div className="p-3 bg-indigo-100 text-indigo-600 rounded-xl">
+                                <${BookOpen} className="w-6 h-6" />
+                              </div>
+                              <div>
+                                <h2 className="text-2xl font-bold">NC CTE Standard</h2>
+                                <p className="text-slate-500">Paste the specific standard or objective you are teaching.</p>
+                              </div>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+                              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                                Paste standard or learning objective:
+                              </label>
+                              <textarea
+                                value=${cteStandard}
+                                onChange=${(e) => setCteStandard(e.target.value)}
+                                placeholder="e.g., Objective 2.01: Understand principles of sustainable agriculture and crop rotation..."
+                                className="w-full h-40 p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none shadow-sm"
+                              />
+                            </div>
+                          </div>
+                        `}
+
+                        <!-- STEP 3: Project Type -->
+                        ${step === 3 && html`
+                          <div className="animate-in">
+                            <div className="flex items-center gap-3 mb-6">
+                              <div className="p-3 bg-emerald-100 text-emerald-600 rounded-xl">
+                                <${Target} className="w-6 h-6" />
+                              </div>
+                              <div>
+                                <h2 className="text-2xl font-bold">Experience Type</h2>
+                                <p className="text-slate-500">What kind of interactive app should the AI build?</p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              ${PROJECT_TYPES.map((type) => html`
+                                <button
+                                  key=${type.id}
+                                  onClick=${() => setProjectType(type.id)}
+                                  className=${`p-6 rounded-xl border text-left transition-all duration-200
+                                    ${projectType === type.id
+                                      ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-600'
+                                      : 'border-slate-200 hover:border-emerald-300 bg-white shadow-sm hover:shadow'}`}
+                                >
+                                  <h3 className="font-bold text-lg mb-1">${type.label}</h3>
+                                  <p className="text-sm text-slate-600">${type.desc}</p>
+                                </button>
+                              `)}
+                            </div>
+                          </div>
+                        `}
+
+                        <!-- STEP 4: Prompt Generation & Share -->
+                        ${step === 4 && html`
+                          <div className="animate-in h-full flex flex-col">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="p-3 bg-violet-100 text-violet-600 rounded-xl">
+                                  <${Code} className="w-6 h-6" />
+                                </div>
+                                <div>
+                                  <h2 className="text-2xl font-bold">Your AI Prompt</h2>
+                                  <p className="text-slate-500 text-sm">Copy and paste this into ChatGPT, Claude, or Gemini.</p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2">
+                                <button
+                                  onClick=${handleShareToGallery}
+                                  disabled=${shared || isSharing}
+                                  className="flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                  ${isSharing
+                                    ? html`<div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />`
+                                    : shared
+                                      ? html`<${CheckCircle} className="w-4 h-4 text-green-600" />`
+                                      : html`<${Share2} className="w-4 h-4" />`}
+                                  ${isSharing ? "Sharing..." : shared ? "Shared!" : "Share to Gallery"}
+                                </button>
+                                <button
+                                  onClick=${() => handleCopy(generatedPrompt, 'prompt')}
+                                  className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg font-medium transition-colors shadow-sm"
+                                >
+                                  ${copiedId === 'prompt'
+                                    ? html`<${CheckCircle} className="w-4 h-4" />`
+                                    : html`<${Copy} className="w-4 h-4" />`}
+                                  ${copiedId === 'prompt' ? "Copied!" : "Copy Prompt"}
+                                </button>
+                              </div>
+                            </div>
+
+                            ${shareError && html`
+                              <p className="text-sm text-red-500 text-right -mt-2 mb-1">
+                                Couldn't share to gallery — check your connection and try again.
+                              </p>
+                            `}
+
+                            <div className="bg-slate-900 rounded-xl overflow-hidden shadow-inner">
+                              <div className="bg-slate-800 flex items-center px-4 h-8 border-b border-slate-700 rounded-t-xl">
+                                <div className="flex gap-2">
+                                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                                </div>
+                              </div>
+                              <pre className="p-6 text-slate-300 font-mono text-sm whitespace-pre-wrap break-words">${generatedPrompt}</pre>
+                            </div>
+                          </div>
+                        `}
+
+                      </div>
+
+                      <!-- Footer Navigation -->
+                      <div className="bg-slate-50 border-t border-slate-200 p-4 px-8 flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick=${handleBack}
+                            disabled=${step === 1}
+                            className=${`flex items-center gap-2 px-4 py-2 font-medium rounded-lg transition-colors
+                              ${step === 1 ? 'text-slate-400 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-200'}`}
+                          >
+                            <${ChevronLeft} className="w-4 h-4" /> Back
+                          </button>
+                          ${step > 1 && html`
+                            <button
+                              onClick=${handleReset}
+                              className="px-4 py-2 font-medium rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors text-sm"
+                            >
+                              Start Over
+                            </button>
+                          `}
+                        </div>
+
+                        <button
+                          onClick=${handleNext}
+                          disabled=${isNextDisabled}
+                          className=${`flex items-center gap-2 px-6 py-2.5 font-medium rounded-lg transition-all
+                            ${isNextDisabled
+                              ? 'bg-blue-300 text-white cursor-not-allowed'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg'}`}
+                        >
+                          Next Step <${ChevronRight} className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ` : html`
+                  <div className="animate-in">
+                    <div className="mb-8">
+                      <h2 className="text-3xl font-bold text-slate-900 mb-2">Community Gallery</h2>
+                      <p className="text-slate-600 text-lg">Discover and copy vibe coding prompts shared by other CTE educators.</p>
+                    </div>
+
+                    ${isLoadingGallery ? html`
+                      <div className="py-12 text-center flex flex-col items-center justify-center">
+                        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <p className="text-slate-500 font-medium">Loading community prompts...</p>
+                      </div>
+                    ` : galleryError ? html`
+                      <div className="py-12 text-center bg-white rounded-2xl border border-slate-200 flex flex-col items-center justify-center">
+                        <p className="text-slate-700 font-semibold mb-1">Couldn't load the gallery</p>
+                        <p className="text-slate-500 text-sm mb-5">Check your connection and try again.</p>
+                        <button
+                          onClick=${fetchGallery}
+                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    ` : html`
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        ${galleryItems.map((item) => html`
+                          <div key=${item.id} className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+                            <div className="flex items-center gap-2 mb-4">
+                              <span className="text-2xl">${item.icon}</span>
+                              <span className="font-semibold text-slate-700">${item.cluster}</span>
+                              <span className="ml-auto text-xs font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded-full">
+                                ${item.type}
+                              </span>
+                            </div>
+
+                            <div className="flex-grow mb-6">
+                              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">Learning Standard</h3>
+                              <p className="text-slate-700 text-sm line-clamp-3">${item.standard}</p>
+                            </div>
+
+                            <div className="flex items-center justify-between border-t border-slate-100 pt-4 mt-auto">
+                              <button
+                                onClick=${() => handleUpvote(item.id)}
+                                disabled=${votedIds.has(item.id)}
+                                className=${`flex items-center gap-1.5 transition-colors font-medium ${
+                                  votedIds.has(item.id)
+                                    ? 'text-red-400 cursor-default'
+                                    : 'text-slate-500 hover:text-red-500'
+                                }`}
+                                title=${votedIds.has(item.id) ? 'Already upvoted' : 'Upvote'}
+                              >
+                                <${Heart} className=${`w-5 h-5 ${votedIds.has(item.id) ? 'fill-red-400' : ''}`} /> ${item.upvotes}
+                              </button>
+
+                              <button
+                                onClick=${() => handleCopy(item.prompt, item.id)}
+                                className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                              >
+                                ${copiedId === item.id
+                                  ? html`<${CheckCircle} className="w-4 h-4" />`
+                                  : html`<${Copy} className="w-4 h-4" />`}
+                                ${copiedId === item.id ? "Copied!" : "Copy Prompt"}
+                              </button>
+                            </div>
+                          </div>
+                        `)}
+
+                        ${galleryItems.length === 0 && html`
+                          <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-slate-200 border-dashed">
+                            <${Globe} className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                            <p className="text-slate-500 font-medium">The gallery is empty. Be the first to share a prompt!</p>
+                          </div>
+                        `}
+                      </div>
+                    `}
+                  </div>
+                `}
+              </main>
+            </div>
+          `;
+        }
+
+        // Mount the application
+        const root = createRoot(document.getElementById('root'));
+        root.render(html`<${App} />`);
+    </script>
+</body>
+</html>
